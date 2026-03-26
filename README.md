@@ -1,148 +1,194 @@
-# Financial Fraud Detection Dashboard
+# 🛡️ Fraud Detection Dashboard — Real-Time Scoring
 
-Sistema de análisis y detección de fraude financiero generado con **Claude Code** usando un agente especializado. A partir de un CSV de transacciones, produce un dashboard interactivo en modo oscuro con gráficas de detección de patrones, KPIs y modelo predictivo de Random Forest — todo en un único archivo HTML autocontenido.
+An interactive **Streamlit dashboard** for real-time financial transaction fraud detection. Trains a Random Forest model on the PaySim dataset, exposes full model diagnostics, and scores any new CSV on the fly — returning fraud probability, risk level and a downloadable results file.
 
----
-
-## Demo
-
-> Carga tu CSV → el dashboard analiza, filtra y visualiza en tiempo real.
-
-| Sección | Descripción |
-|---|---|
-| KPIs | Tasa de fraude, monto fraudulento, comparativa fraude vs. normal |
-| Gráficas | Distribución por tipo, histograma de montos, serie temporal, scatter, heatmap de correlaciones |
-| Tabla | Paginada, ordenable, exportable a CSV |
-| Modelo | Random Forest con métricas: Precision, Recall, F1, ROC-AUC |
+> 🚀 **Live app:** [your-streamlit-url-here]
 
 ---
 
-## Stack
-
-| Capa | Herramienta |
-|---|---|
-| Agente IA | Claude Code — agente `financial-fraud-analyzer` |
-| Análisis y modelo | Python · pandas · scikit-learn (Random Forest) · matplotlib · seaborn |
-| Dashboard | HTML autocontenido · Chart.js 4.x · PapaParse |
-| Dataset esperado | CSV con columnas `step`, `type`, `amount`, `nameOrig`, `oldbalanceOrg`, `newbalanceOrig`, `nameDest`, `oldbalanceDest`, `newbalanceDest`, `isFraud`, `isFlaggedFraud` |
-
----
-
-## Estructura del repositorio
+## 📐 Architecture Overview
 
 ```
-├── fraud_analysis.py              # Script Python: EDA + feature engineering + modelo
-├── fraud_dashboard.html           # Dashboard original generado por Claude Code
-├── fraud_dashboard_optimized.html # Dashboard optimizado para datasets grandes (6M+ filas)
-├── .claude/
-│   └── agents/
-│       └── financial-fraud-analyzer.md  # Definición del agente Claude Code
+┌──────────────────────────────────────────────────────────────┐
+│              TRAINING DATASET (PaySim)                       │
+│         PS_20174392719_1491204439457_log.csv                 │
+│              loaded via Git LFS (6M+ rows)                   │
+└────────────────────────┬─────────────────────────────────────┘
+                         │  nrows configurable (default 250k)
+                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│                 FEATURE ENGINEERING                          │
+│                                                              │
+│  balance_error_orig    balance_error_dest                    │
+│  dest_is_merchant      dest_is_customer                      │
+│  high_value (>p95)     empties_account                       │
+│  type_encoded (LabelEncoder)                                 │
+└────────────────────────┬─────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│           Random Forest (class_weight=balanced)              │
+│      100 trees · max_depth=15 · stratified split 80/20       │
+│      Metrics: Precision · Recall · F1 · ROC-AUC              │
+└─────────────┬────────────────────────────┬───────────────────┘
+              │                            │
+              ▼                            ▼
+   TAB 1 — Model + Training        TAB 2 — Score new CSV
+   ─────────────────────────       ──────────────────────────
+   KPI cards                       Upload any PaySim CSV
+   Type distribution               fraud_probability per row
+   Amount histogram                risk_level classification
+   Heatmap + scatter               KPI cards + charts
+   Time series (by step)           Top 50 high-risk table
+   ROC curve                       Download scored CSV
+   Feature importance
+   Top fraud transactions
+```
+
+---
+
+## 🗂️ Repository Structure
+
+```
+fraud-detection-dashboard/
+│
+├── fraud_realtime_dashboard_v4_demo_scoring.py   # Main Streamlit app
+│
+├── paysim_sample_500.csv          # 500-row sample for quick testing
+├── paysim_synthetic_1000.csv      # 1000 synthetic rows (balanced fraud)
+│
+├── PS_20174392719_1491204439457_log.csv  # Full PaySim dataset — Git LFS
+│
+├── requirements.txt
+├── .gitattributes                 # Git LFS tracking config
+├── .gitignore
 └── README.md
 ```
 
 ---
 
-## Cómo usarlo
+## ⚙️ How It Works
 
-### 1. Ejecutar el análisis Python
+### Training (Tab 1)
+
+On startup the app loads up to **250,000 rows** of the PaySim dataset (configurable in the sidebar), engineers features and trains a Random Forest with `class_weight="balanced"` to handle the heavily imbalanced fraud labels.
+
+The sampling strategy ensures fraud cases are always well-represented: the internal sampler targets **25% fraud / 75% normal** from the available data before training.
+
+Results are cached with `@st.cache_resource` so the model is only retrained when the path or row count changes.
+
+### Feature Engineering
+
+| Feature | Description |
+|---|---|
+| `balance_error_orig` | Difference between amount and origin balance change — flags inconsistencies |
+| `balance_error_dest` | Same for destination — detects money that "appears from nowhere" |
+| `dest_is_merchant` | 1 if destination starts with `M` (merchant) |
+| `dest_is_customer` | 1 if destination starts with `C` (customer account) |
+| `high_value` | 1 if amount > 95th percentile of training data |
+| `empties_account` | 1 if `newbalanceOrig == 0` after transaction |
+| `type_encoded` | Label-encoded transaction type |
+
+### Scoring (Tab 2)
+
+Upload any CSV with the required columns and the model scores every row in real time:
+
+| Output column | Description |
+|---|---|
+| `fraud_probability` | Model confidence score [0–1] |
+| `fraud_pred` | Binary prediction using the active decision threshold |
+| `fraud_pred_model` | Raw model prediction at default threshold |
+| `risk_level` | `Bajo` / `Medio` / `Alto` / `Crítico` |
+
+**Risk level thresholds:**
+
+| Level | Probability range |
+|---|---|
+| Bajo | 0.00 – 0.05 |
+| Medio | 0.05 – 0.20 |
+| Alto | 0.20 – 0.50 |
+| Crítico | 0.50 – 1.00 |
+
+If the uploaded CSV includes the `isFraud` column, the app automatically computes Precision, Recall and F1 against the ground truth.
+
+---
+
+## 🚀 Running Locally
 
 ```bash
-pip install pandas numpy matplotlib seaborn scikit-learn
-
-# Edita las rutas en fraud_analysis.py:
-# FILE_PATH   = 'ruta/a/tu/archivo.csv'
-# OUTPUT_HTML = 'ruta/salida/dashboard.html'
-
-python fraud_analysis.py
+pip install -r requirements.txt
+streamlit run fraud_realtime_dashboard_v4_demo_scoring.py
 ```
 
-El script recorre 5 fases e imprime un resumen en terminal:
+The sidebar lets you configure:
+- **Training CSV path** — defaults to `PS_20174392719_1491204439457_log.csv` in the project root
+- **Training rows** — how many rows to load (50k–1M, default 250k)
+- **Visualization rows** — subsample for interactive charts (default 25k)
+- **Decision threshold** — slider 0.01–0.90 (default 0.20)
 
-```
-[1/5] Cargando datos...
-[2/5] Validacion de datos...
-[3/5] Realizando Analisis Exploratorio...
-[4/5] Detectando patrones de fraude...
-[5/5] Entrenando modelo predictivo...
-```
+For a quick local test without the full dataset, point the training path to `paysim_sample_500.csv`.
 
-### 2. Abrir el dashboard
+---
+
+## ☁️ Deployment — Streamlit Community Cloud
+
+1. Push the repo to GitHub (full dataset via Git LFS)
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
+3. Select repo, branch and set main file:
+   ```
+   fraud_realtime_dashboard_v4_demo_scoring.py
+   ```
+4. Deploy — no secrets required (no external API calls)
+
+### Git LFS setup for the full dataset
 
 ```bash
-open fraud_dashboard_optimized.html   # macOS
-start fraud_dashboard_optimized.html  # Windows
-```
-
-No requiere servidor. Arrastra tu CSV o haz clic en el área de carga.
-
-### 3. Regenerar con Claude Code
-
-Si tienes Claude Code instalado y el agente configurado:
-
-```
-@.claude/agents/financial-fraud-analyzer.md analiza @tu_archivo.csv
+git lfs install
+git lfs track "PS_20174392719_1491204439457_log.csv"
+git add .gitattributes
+git add .
+git commit -m "Initial commit"
+git push -u origin main
 ```
 
 ---
 
-## Optimizaciones de rendimiento
+## 📊 Demo CSVs
 
-El dashboard original se congelaba con datasets de más de 500K filas. La versión `_optimized` aplica:
+Two lightweight files are included for testing the scoring tab without the full dataset:
 
-| Problema | Solución |
-|---|---|
-| `Math.max(...array)` con millones de filas — explota el call stack | Un único `for` que calcula los tres máximos en un pase |
-| 10+ `filteredData.filter()` por cada actualización de gráfica | Índice pre-calculado `buildIndex()` — los charts leen en O(1) |
-| `calculateCorrelation()` hacía 2 `reduce()` por par (72 pases para el heatmap) | Columnas extraídas en `Float64Array` una vez; un pase por par |
-| `chunk` de PapaParse vacío — cargaba todo de golpe | Streaming real en bloques de 512 KB con barra de progreso |
-| Animaciones de Chart.js a 500–800ms bloqueando el hilo | `animation: { duration: 0 }` en todos los charts |
-| `updateSuspicionList` hacía `.filter().sort()` en millones de filas | Mini-heap top-K en un único pase |
-| Sliders disparando recomputes en cada tick | Debounce de 120 ms en `applyFilters` |
+| File | Rows | Fraud cases | Notes |
+|---|---|---|---|
+| `paysim_sample_500.csv` | 500 | 100 (20%) | Real rows sampled from PaySim |
+| `paysim_synthetic_1000.csv` | 1000 | 198 (19.8%) | Synthetically generated — respects all original distributions and fraud patterns |
 
-Resultado: carga fluida en datasets de 6M+ filas.
+The synthetic dataset was generated by fitting log-normal distributions per transaction type and replicating the key fraud signals: `oldbalanceOrg == amount`, `newbalanceOrig == 0`, `oldbalanceDest == 0` for TRANSFER frauds, etc.
 
 ---
 
-## Patrones de fraude que detecta
+## 📋 Required CSV Columns
 
-El análisis identifica automáticamente:
-
-- **Discrepancias de balance** — transacciones donde el cambio de saldo no coincide con el monto
-- **Vaciado de cuenta** — `newbalanceOrig == 0` tras la transacción
-- **Transacciones de alto valor** — por encima del percentil 95 del dataset
-- **Frecuencia por origen** — cuentas con velocidad de transacción anómala
-- **Tipo de destino** — merchants vs. clientes como receptores de fondos
-- **Distribución temporal** — steps con concentración inusual de fraude
-
----
-
-## Modelo predictivo
-
-Random Forest con `class_weight='balanced'` para manejar el desbalanceo de clases (fraude < 0.2% en el dataset de referencia).
-
-**Features usadas:**
-
-```python
-['amount', 'oldbalanceOrg', 'newbalanceOrig', 'oldbalanceDest', 'newbalanceDest',
- 'dest_is_merchant', 'dest_is_customer', 'high_value', 'empties_account',
- 'balance_error_orig', 'balance_error_dest', 'type_encoded']
+```
+step, type, amount, nameOrig, oldbalanceOrg, newbalanceOrig,
+nameDest, oldbalanceDest, newbalanceDest, isFraud (optional for scoring)
 ```
 
-**Métricas típicas sobre el dataset de referencia (6.3M transacciones):**
+---
 
-| Métrica | Valor |
-|---|---|
-| ROC-AUC | ~0.98 |
-| Precision | ~0.94 |
-| Recall | ~0.76 |
-| F1-Score | ~0.84 |
+## 🛠️ Tech Stack
+
+![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-RandomForest-orange)
+![Plotly](https://img.shields.io/badge/Plotly-Interactive-blue)
+![Pandas](https://img.shields.io/badge/Pandas-Data-lightblue)
+![Git LFS](https://img.shields.io/badge/Git-LFS-green)
 
 ---
 
-## Dataset de referencia
+## 📄 License
 
-El proyecto fue desarrollado y validado sobre el dataset público **PaySim** (`PS_20174392719_1491204439457_log.csv`), una simulación de transacciones móviles de dinero basada en datos reales del operador financiero africano M-Pesa.
+This project is for educational and portfolio purposes.
 
-- 6.3M transacciones · 11 columnas · tasa de fraude: 0.13%
-- Solo los tipos `TRANSFER` y `CASH_OUT` contienen fraudes reales
-- Disponible en [Kaggle — Synthetic Financial Datasets For Fraud Detection](https://www.kaggle.com/datasets/ealaxi/paysim1)
+---
+
+*Built as part of a hands-on machine learning and data visualization practice — March 2026*
