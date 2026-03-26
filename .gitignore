@@ -1,0 +1,33 @@
+# Dataset grande — subir vía Git LFS
+PS_20174392719_1491204439457_log.csv
+
+# Versiones anteriores
+vers_anterior/
+
+# Environment variables
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit local config
+.streamlit/secrets.toml
