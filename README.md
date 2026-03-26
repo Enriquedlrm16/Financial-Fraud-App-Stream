@@ -2,7 +2,7 @@
 
 An interactive **Streamlit dashboard** for real-time financial transaction fraud detection. Trains a Random Forest model on the PaySim dataset, exposes full model diagnostics, and scores any new CSV on the fly — returning fraud probability, risk level and a downloadable results file.
 
-> 🚀 **Live app:** [your-streamlit-url-here]
+> 🚀 **Live app:** [https://enriquedlrm-fraud-detection.streamlit.app/]
 
 ---
 
